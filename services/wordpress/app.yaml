@@ -1,60 +1,118 @@
 apiVersion: application.kubero.dev/v1alpha1
 kind: KuberoApp
 metadata:
-  name: wordpress
+    name: wordpress
+    labels:
+        manager: kubero
 spec:
-  name: wordpress
-  deploymentstrategy: docker
-  image:
-    repository: bitnami/wordpress
-    tag: latest
-    containerPort: "8080"
-  addons:
-  - displayName: Kubero Mysql
-    env: []
-    icon: /img/addons/MySQL.png
-    id: kubero-operator
-    kind: KuberoMysql
-    resourceDefinitions:
-      KuberoMysql:
-        apiVersion: application.kubero.dev/v1alpha1
-        kind: KuberoMysql
-        metadata:
-          name: mysql2
-        spec:
-          mysql:
-            auth:
-              createDatabase: true
-              database: wordpress
-              password: wordpress
-              rootPassword: wordpress
-              username: wordpress
-            global:
-              storageClass: standard
-            primary:
-              persistence:
-                accessModes:
-                - ReadWriteMany
-                size: 1Gi
-  envVars:
-  - name: WORDPRESS_DATABASE_HOST
-    value: mysql2
-  - name: WORDPRESS_DATABASE_USER
-    value: wordpress
-  - name: WORDPRESS_DATABASE_PASSWORD
-    value: wordpress
-  - name: WORDPRESS_DATABASE_NAME
-    value: wordpress
-  cronjobs: []
-  extraVolumes:
-  - accessModes:
-    - ReadWriteOnce
-    emptyDir: false
-    mountPath: /bitnami/wordpress
-    name: wordpress-data
-    size: 1Gi
-    storageClass: standard
-  web:
-    replicaCount: 1
-  worker:
-    replicaCount: 0
+    name: wordpress
+    deploymentstrategy: docker
+    envVars:
+        - name: WORDPRESS_DB_HOST
+          value: wordpress-db-mysql.wordpress-production.svc.cluster.local
+        - name: WORDPRESS_DB_USER
+          value: wordpress
+        - name: WORDPRESS_DB_PASSWORD
+          value: wordpress
+        - name: WORDPRESS_DB_NAME
+          value: wordpress
+        - name: SERVER_NAME
+          value: :80
+        - name: WORDPRESS_TABLE_PREFIX
+          value: wp_
+        - name: WORDPRESS_CONFIG_EXTRA
+          value: "@ini_set('display_errors',0);define('CONCATENATE_SCRIPTS',false);define\
+              ('DISALLOW_FILE_EDIT',true);define('WP_DEBUG_DISPLAY',false);defi\
+              ne('WP_DEBUG_LOG',false);define('WP_DEVELOPMENT_MODE',true);defin\
+              e('WP_MAX_MEMORY_LIMIT','64M');define('WP_MEMORY_LIMIT','64M');"
+        - name: WORDPRESS_DEBUG
+          value: "true"
+        - name: CACHE_LOC
+          value: /var/www/html/wp-content/cache
+        - name: PURGE_PATH
+          value: /__cache/purge
+        - name: PURGE_KEY
+          value: ""
+        - name: BYPASS_HOME
+          value: "true"
+        - name: BYPASS_PATH_PREFIXES
+          value: /wp-admin,wp-includes,wp-login.php
+        - name: TTL
+          value: "80"
+        - name: CACHE_RESPONSE_CODES
+          value: "000"
+    serviceAccount:
+        annotations: {}
+    extraVolumes:
+        - accessModes:
+              - ReadWriteMany
+          emptyDir: false
+          mountPath: /var/www/html/wp-content
+          name: wordpress-wp-content
+          size: 10Gi
+          storageClass: csi-cinder-high-speed
+    cronjobs:
+        - command:
+              - wget
+              - -O
+              - "-"
+              - -q
+              - -t
+              - "1"
+              - http://wordpress-kuberoapp.wordpress-production.svc.cluster.local/wp-cron.php?doing_wp_cron
+          image: busybox
+          name: wordpress-cron
+          restartPolicy: OnFailure
+          schedule: "* * * * *"
+    addons:
+        - displayName: MySQL
+          env: []
+          icon: /img/addons/MySQL.png
+          id: kubero-operator
+          kind: KuberoMysql
+          resourceDefinitions:
+              KuberoMysql:
+                  apiVersion: application.kubero.dev/v1alpha1
+                  kind: KuberoMysql
+                  metadata:
+                      name: wordpress-db
+                  spec:
+                      mysql:
+                          auth:
+                              createDatabase: true
+                              database: wordpress
+                              password: wordpress
+                              rootPassword: wordpress
+                              username: wordpress
+                          global:
+                              storageClass: csi-cinder-high-speed
+                          primary:
+                              persistence:
+                                  accessModes:
+                                      - ReadWriteOnce
+                                  size: 1Gi
+          version:
+              latest: 0.1.2
+    web:
+        replicaCount: 1
+    worker:
+        replicaCount: 0
+    image:
+        containerPort: "80"
+        pullPolicy: Always
+        repository: wpeverywhere/frankenwp
+        tag: latest-php8.3
+        run:
+            command: node index.js
+            readOnlyAppStorage: true
+            repository: node
+            securityContext:
+                runAsUser: 0
+                runAsGroup: 0
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false
+                runAsNonRoot: false
+                capabilities:
+                    add: []
+                    drop: []
+            tag: latest
